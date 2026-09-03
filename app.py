@@ -57,6 +57,21 @@ st.markdown(
     .risk-card{background:#fff;border:1px solid #fee2e2;border-left:4px solid #dc2626;border-radius:12px;padding:14px 16px;margin-bottom:10px}
     .risk-name{font-weight:750;color:#111827}
     .risk-meta{font-size:.78rem;color:#6b7280;margin-top:4px}
+    .customer-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:15px 18px;margin-bottom:10px;transition:box-shadow .18s ease,border-color .18s ease}
+    .customer-card:hover{box-shadow:0 5px 18px rgba(15,23,42,.07);border-color:#d1d5db}
+    .customer-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px}
+    .customer-name{font-weight:800;font-size:.94rem;color:#111827}
+    .badge{border-radius:7px;padding:3px 8px;font-size:.69rem;font-weight:800;white-space:nowrap}
+    .badge-active{background:#dcfce7;color:#15803d;border:1px solid #bbf7d0}
+    .badge-cancelled{background:#fee2e2;color:#b91c1c;border:1px solid #fecaca}
+    .badge-withdrawal{background:#fef3c7;color:#92400e;border:1px solid #fde68a}
+    .badge-healthy{background:#dcfce7;color:#15803d}
+    .badge-risk{background:#fef3c7;color:#92400e}
+    .badge-critical{background:#fee2e2;color:#b91c1c}
+    .badge-new{background:#ede9fe;color:#6d28d9}
+    .customer-meta{display:flex;gap:14px;flex-wrap:wrap;font-size:.76rem;color:#6b7280;line-height:1.55}
+    .customer-note{font-size:.76rem;color:#4b5563;margin-top:7px;padding-top:7px;border-top:1px solid #f3f4f6}
+    .customer-alert{font-size:.74rem;color:#b91c1c;margin-top:5px;font-weight:650}
     @media (max-width:700px){.hero-title{font-size:1.55rem}.stat-card{min-height:94px}.bar-row{grid-template-columns:95px 1fr 24px}}
     </style>
     """,
@@ -256,54 +271,171 @@ def analytics(customers: pd.DataFrame) -> None:
         st.dataframe(exits[["customer_name", "entry_date", "cancellation_date", "cancellation_reason"]], use_container_width=True, hide_index=True)
 
 
+def customer_card(customer: pd.Series) -> None:
+    status = str(customer.get("customer_status") or "Active")
+    health = str(customer.get("platform_status") or "Healthy")
+    status_class = {
+        "Active": "badge-active",
+        "Cancelled": "badge-cancelled",
+        "Desistencia": "badge-withdrawal",
+    }.get(status, "badge-active")
+    health_class = {
+        "Healthy": "badge-healthy",
+        "AtRisk": "badge-risk",
+        "Dormant": "badge-critical",
+        "NeverActivated": "badge-new",
+    }.get(health, "badge-healthy")
+    entry_date = normalize_date(customer.get("entry_date"))
+    next_contact = normalize_date(customer.get("next_contact_date"))
+    cancellation_date = normalize_date(customer.get("cancellation_date"))
+    entry_label = entry_date.strftime("%d/%m/%Y") if entry_date else "não informada"
+    contact_label = next_contact.strftime("%d/%m/%Y") if next_contact else "não agendado"
+    plan = str(customer.get("plan_cycle") or "Não informado")
+    payment = str(customer.get("payment_platform") or "Não informado")
+    accounts = int(customer.get("account_count") or 0)
+    owner = str(customer.get("owner") or "Não definido")
+    notes = str(customer.get("notes") or "").strip()
+    cancellation_reason = str(customer.get("cancellation_reason") or "").strip()
+
+    exit_detail = ""
+    if status != "Active":
+        exit_date_label = cancellation_date.strftime("%d/%m/%Y") if cancellation_date else "não informada"
+        exit_detail = f'<span>📤 Saída: {escape(exit_date_label)}</span>'
+
+    note_html = f'<div class="customer-note">📝 {escape(notes)}</div>' if notes else ""
+    alert_html = (
+        f'<div class="customer-alert">⚠ {escape(cancellation_reason)}</div>'
+        if cancellation_reason
+        else ""
+    )
+    st.markdown(
+        f"""
+        <div class="customer-card">
+            <div class="customer-head">
+                <span class="customer-name">{escape(str(customer.get('customer_name') or 'Cliente sem nome'))}</span>
+                <span class="badge {status_class}">{escape(CUSTOMER_STATUS_LABELS.get(status, status))}</span>
+                <span class="badge {health_class}">{escape(HEALTH_LABELS.get(health, health))}</span>
+            </div>
+            <div class="customer-meta">
+                <span>♙ {escape(owner)}</span>
+                <span>💳 {escape(plan)}</span>
+                <span>🏦 {escape(payment)}</span>
+                <span>📅 Entrada: {escape(entry_label)}</span>
+                <span>☎ Próximo contato: {escape(contact_label)}</span>
+                <span>▦ {accounts} conta{'s' if accounts != 1 else ''}</span>
+                {exit_detail}
+            </div>
+            {note_html}
+            {alert_html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def customers_page(customers: pd.DataFrame) -> None:
     st.markdown('<div class="eyebrow">Gestão da carteira</div>', unsafe_allow_html=True)
     st.title("Clientes")
-    st.caption("Edite as linhas ou use a última linha vazia para cadastrar um cliente fictício.")
+    st.caption("Consulte a carteira em cartões ou altere os dados fictícios na tabela editável.")
 
-    editable = pd.DataFrame(
-        {
-            "ID": customers["customer_id"],
-            "Cliente": customers["customer_name"],
-            "Responsável": customers["owner"],
-            "Status": customers["customer_status"].map(CUSTOMER_STATUS_LABELS),
-            "Saúde": customers["platform_status"].map(HEALTH_LABELS),
-            "Próximo contato": customers["next_contact_date"],
-            "Último contato": customers["last_contact_date"],
-            "Follow-ups": customers["follow_up_count"],
-            "Renovação (dias)": customers["renewal_days"],
-            "Ciclo": customers["plan_cycle"],
-            "Pagamento": customers["payment_platform"],
-            "Contas": customers["account_count"],
-            "Última atividade": customers["last_platform_activity_date"],
-            "Notas": customers["notes"],
-        }
-    )
-    with st.form("demo_customer_editor"):
-        edited = st.data_editor(
-            editable,
-            num_rows="dynamic",
-            hide_index=True,
-            use_container_width=True,
-            column_config={
-                "Status": st.column_config.SelectboxColumn(
-                    "Status",
-                    options=list(CUSTOMER_STATUS_VALUES),
-                    required=True,
-                ),
-                "Saúde": st.column_config.SelectboxColumn(
-                    "Saúde",
-                    options=list(HEALTH_LABELS.values()),
-                ),
-                "Próximo contato": st.column_config.DateColumn("Próximo contato", format="DD/MM/YYYY"),
-                "Último contato": st.column_config.DateColumn("Último contato", format="DD/MM/YYYY"),
-                "Última atividade": st.column_config.DateColumn("Última atividade", format="DD/MM/YYYY"),
-                "Follow-ups": st.column_config.NumberColumn("Follow-ups", min_value=0, step=1),
-                "Renovação (dias)": st.column_config.NumberColumn("Renovação (dias)", min_value=0, step=1),
-                "Contas": st.column_config.NumberColumn("Contas", min_value=0, step=1),
-            },
+    view_tab, edit_tab = st.tabs(["▦ Visualização", "✎ Editar dados"])
+
+    with view_tab:
+        search_col, status_col, health_col = st.columns([2.2, 1, 1])
+        with search_col:
+            search = st.text_input(
+                "Buscar cliente ou responsável",
+                placeholder="Digite um nome...",
+                key="customer_card_search",
+            )
+        with status_col:
+            status_filter = st.selectbox(
+                "Status",
+                ["Todos", *CUSTOMER_STATUS_LABELS.values()],
+                key="customer_card_status",
+            )
+        with health_col:
+            health_filter = st.selectbox(
+                "Saúde",
+                ["Todas", *HEALTH_LABELS.values()],
+                key="customer_card_health",
+            )
+
+        visible = customers.copy()
+        if search.strip():
+            term = search.strip().casefold()
+            searchable = (
+                visible["customer_name"].fillna("").astype(str)
+                + " "
+                + visible["owner"].fillna("").astype(str)
+            ).str.casefold()
+            visible = visible[searchable.str.contains(term, regex=False)]
+        if status_filter != "Todos":
+            status_value = CUSTOMER_STATUS_VALUES[status_filter]
+            visible = visible[visible["customer_status"] == status_value]
+        if health_filter != "Todas":
+            health_values = {label: value for value, label in HEALTH_LABELS.items()}
+            visible = visible[visible["platform_status"] == health_values[health_filter]]
+
+        st.caption(f"{len(visible)} cliente{'s' if len(visible) != 1 else ''} encontrado{'s' if len(visible) != 1 else ''}")
+        if visible.empty:
+            st.info("Nenhum cliente encontrado com esses filtros.")
+        else:
+            status_order = {"Active": 0, "Cancelled": 1, "Desistencia": 2}
+            health_order = {"Dormant": 0, "AtRisk": 1, "NeverActivated": 2, "Healthy": 3}
+            ordered = visible.assign(
+                _status_order=visible["customer_status"].map(status_order).fillna(9),
+                _health_order=visible["platform_status"].map(health_order).fillna(9),
+            ).sort_values(["_status_order", "_health_order", "customer_name"])
+            for _, customer in ordered.iterrows():
+                customer_card(customer)
+
+    with edit_tab:
+        st.caption("Edite as linhas ou use a última linha vazia para cadastrar um cliente fictício.")
+
+        editable = pd.DataFrame(
+            {
+                "ID": customers["customer_id"],
+                "Cliente": customers["customer_name"],
+                "Responsável": customers["owner"],
+                "Status": customers["customer_status"].map(CUSTOMER_STATUS_LABELS),
+                "Saúde": customers["platform_status"].map(HEALTH_LABELS),
+                "Próximo contato": customers["next_contact_date"],
+                "Último contato": customers["last_contact_date"],
+                "Follow-ups": customers["follow_up_count"],
+                "Renovação (dias)": customers["renewal_days"],
+                "Ciclo": customers["plan_cycle"],
+                "Pagamento": customers["payment_platform"],
+                "Contas": customers["account_count"],
+                "Última atividade": customers["last_platform_activity_date"],
+                "Notas": customers["notes"],
+            }
         )
-        save = st.form_submit_button("Aplicar alterações na demonstração", type="primary", use_container_width=True)
+        with st.form("demo_customer_editor"):
+            edited = st.data_editor(
+                editable,
+                num_rows="dynamic",
+                hide_index=True,
+                use_container_width=True,
+                column_config={
+                    "Status": st.column_config.SelectboxColumn(
+                        "Status",
+                        options=list(CUSTOMER_STATUS_VALUES),
+                        required=True,
+                    ),
+                    "Saúde": st.column_config.SelectboxColumn(
+                        "Saúde",
+                        options=list(HEALTH_LABELS.values()),
+                    ),
+                    "Próximo contato": st.column_config.DateColumn("Próximo contato", format="DD/MM/YYYY"),
+                    "Último contato": st.column_config.DateColumn("Último contato", format="DD/MM/YYYY"),
+                    "Última atividade": st.column_config.DateColumn("Última atividade", format="DD/MM/YYYY"),
+                    "Follow-ups": st.column_config.NumberColumn("Follow-ups", min_value=0, step=1),
+                    "Renovação (dias)": st.column_config.NumberColumn("Renovação (dias)", min_value=0, step=1),
+                    "Contas": st.column_config.NumberColumn("Contas", min_value=0, step=1),
+                },
+            )
+            save = st.form_submit_button("Aplicar alterações na demonstração", type="primary", use_container_width=True)
 
     if save:
         updated_rows = []
