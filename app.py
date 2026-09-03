@@ -40,6 +40,11 @@ st.markdown(
     <style>
     .block-container{padding-top:1.5rem;padding-bottom:3rem}
     [data-testid="stSidebar"]{background:#f7f7f8;border-right:1px solid #e5e7eb}
+    [data-testid="stSidebar"] div[role="radiogroup"]{gap:5px}
+    [data-testid="stSidebar"] div[role="radiogroup"] label{padding:9px 11px;border-radius:9px;border:1px solid transparent;transition:all .15s ease}
+    [data-testid="stSidebar"] div[role="radiogroup"] label:hover{background:#fff;border-color:#e5e7eb}
+    [data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked){background:#fff;border-color:#fecaca;box-shadow:0 2px 8px rgba(15,23,42,.05)}
+    [data-testid="stSidebar"] div[role="radiogroup"] label > div:first-child{display:none}
     [data-testid="stMetric"]{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:12px 14px}
     .eyebrow{font-size:.76rem;text-transform:uppercase;letter-spacing:.1em;color:#c62828;font-weight:800}
     .demo-banner{background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:10px 14px;margin-bottom:18px}
@@ -72,6 +77,14 @@ st.markdown(
     .customer-meta{display:flex;gap:14px;flex-wrap:wrap;font-size:.76rem;color:#6b7280;line-height:1.55}
     .customer-note{font-size:.76rem;color:#4b5563;margin-top:7px;padding-top:7px;border-top:1px solid #f3f4f6}
     .customer-alert{font-size:.74rem;color:#b91c1c;margin-top:5px;font-weight:650}
+    .portfolio-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:15px 18px;margin-bottom:10px}
+    .portfolio-card.priority-high{border-left:4px solid #dc2626}
+    .portfolio-card.priority-medium{border-left:4px solid #f59e0b}
+    .portfolio-card.priority-low{border-left:4px solid #16a34a}
+    .action-line{margin-top:8px;padding:7px 10px;border-radius:8px;background:#f8fafc;color:#334155;font-size:.76rem;font-weight:650}
+    .analytics-summary{background:linear-gradient(135deg,#fff 0%,#f8fafc 100%);border:1px solid #e5e7eb;border-radius:14px;padding:18px}
+    .analytics-summary strong{display:block;color:#111827;font-size:.9rem;margin-bottom:5px}
+    .analytics-summary span{color:#6b7280;font-size:.77rem}
     @media (max-width:700px){.hero-title{font-size:1.55rem}.stat-card{min-height:94px}.bar-row{grid-template-columns:95px 1fr 24px}}
     </style>
     """,
@@ -219,55 +232,119 @@ def overview(customers: pd.DataFrame) -> None:
 
 
 def portfolio(customers: pd.DataFrame) -> None:
-    st.title("Minha carteira")
-    data = active_portfolio(customers)
-    selected_health = st.multiselect(
-        "Saúde",
-        list(HEALTH_LABELS.values()),
-        default=list(HEALTH_LABELS.values()),
+    st.markdown('<div class="eyebrow">Acompanhamento operacional</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-title">Minha carteira</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="hero-copy">Encontre rapidamente quem precisa de contato e qual é a próxima ação recomendada.</div>',
+        unsafe_allow_html=True,
     )
-    search = st.text_input("Buscar cliente")
+    data = active_portfolio(customers)
+    summary = st.columns(4)
+    with summary[0]:
+        stat_card("Clientes ativos", len(data), "#16a34a")
+    with summary[1]:
+        stat_card("Prioridade alta", int((data["contact_priority"] == "High").sum()), "#dc2626")
+    with summary[2]:
+        stat_card("Contato até hoje", int(data["next_contact_date"].apply(normalize_date).apply(lambda value: value is not None and value <= date.today()).sum()), "#2563eb")
+    with summary[3]:
+        stat_card("Renovação em 30 dias", int(data["renewal_days"].apply(lambda value: pd.notna(value) and int(value) <= 30).sum()), "#7c3aed")
+
+    search_col, health_col, priority_col = st.columns([2, 1, 1])
+    with search_col:
+        search = st.text_input("Buscar cliente", placeholder="Nome, ID ou responsável...", key="portfolio_search")
+    with health_col:
+        selected_health = st.multiselect(
+            "Saúde",
+            list(HEALTH_LABELS.values()),
+            default=list(HEALTH_LABELS.values()),
+        )
+    with priority_col:
+        selected_priority = st.selectbox("Prioridade", ["Todas", "Alta", "Média", "Baixa"])
+
     data = data[data["health_display"].isin(selected_health)]
+    if selected_priority != "Todas":
+        data = data[data["priority_display"] == selected_priority]
     if search.strip():
         term = search.strip().casefold()
         searchable = (data["customer_name"] + " " + data["customer_id"] + " " + data["owner"]).str.casefold()
         data = data[searchable.str.contains(term, regex=False)]
-    st.dataframe(
-        data[["customer_id", "customer_name", "owner", "health_display", "last_platform_activity_date", "priority_display", "next_contact_date", "action_display"]],
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "customer_id": "ID",
-            "customer_name": "Cliente",
-            "owner": "Responsável",
-            "health_display": "Saúde",
-            "last_platform_activity_date": st.column_config.DateColumn("Última atividade", format="DD/MM/YYYY"),
-            "priority_display": "Prioridade",
-            "next_contact_date": st.column_config.DateColumn("Próximo contato", format="DD/MM/YYYY"),
-            "action_display": "Próxima ação",
-        },
-    )
+    data = data.sort_values("contact_priority_score", ascending=False)
+    st.caption(f"{len(data)} cliente{'s' if len(data) != 1 else ''} na seleção")
+    if data.empty:
+        st.info("Nenhum cliente encontrado com esses filtros.")
+    else:
+        for _, customer in data.iterrows():
+            health = str(customer.get("platform_status") or "Healthy")
+            health_class = {
+                "Healthy": "badge-healthy", "AtRisk": "badge-risk",
+                "Dormant": "badge-critical", "NeverActivated": "badge-new",
+            }.get(health, "badge-healthy")
+            priority = str(customer.get("contact_priority") or "Low").lower()
+            next_contact = normalize_date(customer.get("next_contact_date"))
+            contact_label = next_contact.strftime("%d/%m/%Y") if next_contact else "não agendado"
+            last_activity = normalize_date(customer.get("last_platform_activity_date"))
+            activity_label = last_activity.strftime("%d/%m/%Y") if last_activity else "sem atividade"
+            card = (
+                f'<div class="portfolio-card priority-{escape(priority)}">'
+                '<div class="customer-head">'
+                f'<span class="customer-name">{escape(str(customer["customer_name"]))}</span>'
+                f'<span class="badge {health_class}">{escape(str(customer["health_display"]))}</span>'
+                f'<span class="badge badge-{"critical" if priority == "high" else "risk" if priority == "medium" else "healthy"}">Prioridade {escape(str(customer["priority_display"]).lower())}</span>'
+                '</div><div class="customer-meta">'
+                f'<span>♙ {escape(str(customer["owner"]))}</span>'
+                f'<span>☎ Próximo contato: {escape(contact_label)}</span>'
+                f'<span>◷ Última atividade: {escape(activity_label)}</span>'
+                f'<span>💳 {escape(str(customer["payment_platform"]))}</span>'
+                f'<span>▦ {int(customer["account_count"])} conta{"s" if int(customer["account_count"]) != 1 else ""}</span>'
+                '</div>'
+                f'<div class="action-line">→ {escape(str(customer["action_display"]))}</div></div>'
+            )
+            st.markdown(card, unsafe_allow_html=True)
 
 
 def analytics(customers: pd.DataFrame) -> None:
     st.markdown('<div class="eyebrow">Saúde da carteira</div>', unsafe_allow_html=True)
-    st.title("Analytics")
+    st.markdown('<div class="hero-title">Analytics</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="hero-copy">Leitura gerencial da saúde, dos riscos e das saídas registradas na carteira.</div>',
+        unsafe_allow_html=True,
+    )
     active = active_portfolio(customers)
+    exits = customers[customers["customer_status"].isin(["Cancelled", "Desistencia"])].copy()
+    top = st.columns(4)
+    with top[0]:
+        stat_card("Base analisada", len(customers), "#111827", "ativos e históricos")
+    with top[1]:
+        stat_card("Saúde estável", int((active["platform_status"] == "Healthy").sum()), "#16a34a", "clientes ativos")
+    with top[2]:
+        stat_card("Prioridade alta", int((active["contact_priority"] == "High").sum()), "#dc2626", "ação recomendada")
+    with top[3]:
+        stat_card("Saídas", len(exits), "#7c3aed", "cancelamentos e desistências")
+
     tab_health, tab_risk, tab_churn = st.tabs(["Saúde", "Risco", "Churn"])
     with tab_health:
         counts = active["health_display"].value_counts().reindex(list(HEALTH_LABELS.values()), fill_value=0)
-        st.bar_chart(counts)
+        left, right = st.columns([1, 1.35])
+        with left:
+            distribution_card("Distribuição da saúde", counts, "#2563eb")
+        with right:
+            st.markdown('<div class="analytics-summary"><strong>Como interpretar</strong><span>Clientes dormentes, em risco ou que nunca ativaram devem alimentar a fila operacional da carteira.</span></div>', unsafe_allow_html=True)
         st.dataframe(active[["customer_name", "health_display", "last_platform_activity_date", "payment_platform", "account_count"]], use_container_width=True, hide_index=True)
     with tab_risk:
         counts = active["priority_display"].value_counts().reindex(["Alta", "Média", "Baixa"], fill_value=0)
-        st.bar_chart(counts)
+        left, right = st.columns([1, 1.35])
+        with left:
+            distribution_card("Distribuição das prioridades", counts, "#f59e0b")
+        with right:
+            st.markdown('<div class="analytics-summary"><strong>Critério operacional</strong><span>A prioridade combina contatos pendentes, ausência de resposta e proximidade da renovação.</span></div>', unsafe_allow_html=True)
         st.dataframe(active.sort_values("contact_priority_score", ascending=False)[["customer_name", "priority_display", "health_display", "next_contact_date", "action_display"]], use_container_width=True, hide_index=True)
     with tab_churn:
-        exits = customers[customers["customer_status"].isin(["Cancelled", "Desistencia"])].copy()
-        metrics = st.columns(3)
-        metrics[0].metric("Saídas", len(exits))
-        metrics[1].metric("Cancelamentos", int((exits["customer_status"] == "Cancelled").sum()))
-        metrics[2].metric("Desistências", int((exits["customer_status"] == "Desistencia").sum()))
+        metrics = st.columns(2)
+        with metrics[0]:
+            stat_card("Cancelamentos", int((exits["customer_status"] == "Cancelled").sum()), "#dc2626")
+        with metrics[1]:
+            stat_card("Desistências", int((exits["customer_status"] == "Desistencia").sum()), "#f59e0b")
+        distribution_card("Motivos das saídas", exits["cancellation_reason"].fillna("Motivo não informado").value_counts(), "#dc2626")
         st.dataframe(exits[["customer_name", "entry_date", "cancellation_date", "cancellation_reason"]], use_container_width=True, hide_index=True)
 
 
