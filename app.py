@@ -308,29 +308,22 @@ def customer_card(customer: pd.Series) -> None:
         if cancellation_reason
         else ""
     )
-    st.markdown(
-        f"""
-        <div class="customer-card">
-            <div class="customer-head">
-                <span class="customer-name">{escape(str(customer.get('customer_name') or 'Cliente sem nome'))}</span>
-                <span class="badge {status_class}">{escape(CUSTOMER_STATUS_LABELS.get(status, status))}</span>
-                <span class="badge {health_class}">{escape(HEALTH_LABELS.get(health, health))}</span>
-            </div>
-            <div class="customer-meta">
-                <span>♙ {escape(owner)}</span>
-                <span>💳 {escape(plan)}</span>
-                <span>🏦 {escape(payment)}</span>
-                <span>📅 Entrada: {escape(entry_label)}</span>
-                <span>☎ Próximo contato: {escape(contact_label)}</span>
-                <span>▦ {accounts} conta{'s' if accounts != 1 else ''}</span>
-                {exit_detail}
-            </div>
-            {note_html}
-            {alert_html}
-        </div>
-        """,
-        unsafe_allow_html=True,
+    card_html = (
+        '<div class="customer-card">'
+        '<div class="customer-head">'
+        f'<span class="customer-name">{escape(str(customer.get("customer_name") or "Cliente sem nome"))}</span>'
+        f'<span class="badge {status_class}">{escape(CUSTOMER_STATUS_LABELS.get(status, status))}</span>'
+        f'<span class="badge {health_class}">{escape(HEALTH_LABELS.get(health, health))}</span>'
+        '</div><div class="customer-meta">'
+        f'<span>♙ {escape(owner)}</span>'
+        f'<span>💳 {escape(plan)}</span>'
+        f'<span>🏦 {escape(payment)}</span>'
+        f'<span>📅 Entrada: {escape(entry_label)}</span>'
+        f'<span>☎ Próximo contato: {escape(contact_label)}</span>'
+        f'<span>▦ {accounts} conta{"s" if accounts != 1 else ""}</span>'
+        f'{exit_detail}</div>{note_html}{alert_html}</div>'
     )
+    st.markdown(card_html, unsafe_allow_html=True)
 
 
 def customers_page(customers: pd.DataFrame) -> None:
