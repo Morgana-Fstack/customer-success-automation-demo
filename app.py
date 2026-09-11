@@ -38,7 +38,7 @@ CUSTOMER_STATUS_VALUES = {label: value for value, label in CUSTOMER_STATUS_LABEL
 st.markdown(
     """
     <style>
-    .block-container{padding-top:1.5rem;padding-bottom:3rem}
+    .block-container{padding-top:4.25rem;padding-bottom:3rem}
     [data-testid="stSidebar"]{background:#f7f7f8;border-right:1px solid #e5e7eb}
     [data-testid="stSidebar"] div[role="radiogroup"]{gap:5px}
     [data-testid="stSidebar"] div[role="radiogroup"] label{padding:9px 11px;border-radius:9px;border:1px solid transparent;transition:all .15s ease}
@@ -47,7 +47,11 @@ st.markdown(
     [data-testid="stSidebar"] div[role="radiogroup"] label > div:first-child{display:none}
     [data-testid="stMetric"]{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:12px 14px}
     .eyebrow{font-size:.76rem;text-transform:uppercase;letter-spacing:.1em;color:#c62828;font-weight:800}
-    .demo-banner{background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:10px 14px;margin-bottom:18px}
+    .demo-banner{display:block;width:100%;box-sizing:border-box;background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:12px 16px;margin:0 0 18px;line-height:1.45;overflow:visible}
+    @media(max-width:640px){
+      .block-container{padding-top:4.75rem}
+      .demo-banner{padding:12px 14px;font-size:.88rem}
+    }
     .hero-title{font-size:2rem;font-weight:800;line-height:1.15;color:#111827;margin:.25rem 0 .35rem}
     .hero-copy{color:#6b7280;margin-bottom:1.25rem}
     .stat-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px 18px;min-height:104px}
