@@ -37,6 +37,8 @@ def build_demo_customers(today: date | None = None) -> pd.DataFrame:
             "account_count": 2,
             "last_platform_activity_date": days_ago(1),
             "platform_status": "Healthy",
+            "mrr_monthly": 1200.0,
+            "onboarding_completed": True,
         },
         {
             "customer_id": "DEMO-002",
@@ -59,6 +61,8 @@ def build_demo_customers(today: date | None = None) -> pd.DataFrame:
             "account_count": 1,
             "last_platform_activity_date": days_ago(12),
             "platform_status": "AtRisk",
+            "mrr_monthly": 900.0,
+            "onboarding_completed": True,
         },
         {
             "customer_id": "DEMO-003",
@@ -81,6 +85,8 @@ def build_demo_customers(today: date | None = None) -> pd.DataFrame:
             "account_count": 3,
             "last_platform_activity_date": days_ago(34),
             "platform_status": "Dormant",
+            "mrr_monthly": 1800.0,
+            "onboarding_completed": True,
         },
         {
             "customer_id": "DEMO-004",
@@ -103,6 +109,8 @@ def build_demo_customers(today: date | None = None) -> pd.DataFrame:
             "account_count": 1,
             "last_platform_activity_date": None,
             "platform_status": "NeverActivated",
+            "mrr_monthly": 600.0,
+            "onboarding_completed": False,
         },
         {
             "customer_id": "DEMO-005",
@@ -125,6 +133,8 @@ def build_demo_customers(today: date | None = None) -> pd.DataFrame:
             "account_count": 1,
             "last_platform_activity_date": days_ago(40),
             "platform_status": "Dormant",
+            "mrr_monthly": 750.0,
+            "onboarding_completed": True,
         },
         {
             "customer_id": "DEMO-006",
@@ -147,6 +157,8 @@ def build_demo_customers(today: date | None = None) -> pd.DataFrame:
             "account_count": 1,
             "last_platform_activity_date": days_ago(22),
             "platform_status": "Dormant",
+            "mrr_monthly": 1100.0,
+            "onboarding_completed": False,
         },
     ]
     return pd.DataFrame(records)
