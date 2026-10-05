@@ -114,12 +114,19 @@ def money(value: float) -> str:
     return f"R$ {formatted}"
 
 
+def numeric_column(frame: pd.DataFrame, column: str) -> pd.Series:
+    """Return a numeric series even for sessions created before a column existed."""
+    if column not in frame.columns:
+        return pd.Series(0.0, index=frame.index, dtype=float)
+    return pd.to_numeric(frame[column], errors="coerce").fillna(0.0)
+
+
 def monthly_history(customers: pd.DataFrame) -> pd.DataFrame:
     """Build a transparent monthly snapshot from the fictitious portfolio."""
     data = customers.copy()
     data["entry"] = pd.to_datetime(data["entry_date"], errors="coerce")
     data["exit"] = pd.to_datetime(data["cancellation_date"], errors="coerce")
-    data["mrr"] = pd.to_numeric(data.get("mrr_monthly", 0), errors="coerce").fillna(0)
+    data["mrr"] = numeric_column(data, "mrr_monthly")
     valid = data.dropna(subset=["entry"])
     if valid.empty:
         return pd.DataFrame()
@@ -209,8 +216,8 @@ def overview(customers: pd.DataFrame) -> None:
     attention = active[active["platform_status"].isin(attention_statuses)].copy()
     due = active["next_contact_date"].apply(normalize_date)
     due_today = int(due.apply(lambda value: value is not None and value <= date.today()).sum())
-    active_mrr = float(pd.to_numeric(active.get("mrr_monthly", 0), errors="coerce").fillna(0).sum())
-    paying = int((pd.to_numeric(active.get("mrr_monthly", 0), errors="coerce").fillna(0) > 0).sum())
+    active_mrr = float(numeric_column(active, "mrr_monthly").sum())
+    paying = int((numeric_column(active, "mrr_monthly") > 0).sum())
     ticket = active_mrr / paying if paying else 0
 
     st.markdown('<div class="eyebrow">Visão executiva da operação</div>', unsafe_allow_html=True)
@@ -242,6 +249,7 @@ def overview(customers: pd.DataFrame) -> None:
         if not history.empty:
             st.bar_chart(history.set_index("Mês")[["MRR novo", "MRR perdido"]])
     with chart_right:
+        active["mrr_monthly"] = numeric_column(active, "mrr_monthly")
         plans = active.groupby("plan_cycle")["mrr_monthly"].sum().sort_values(ascending=False)
         distribution_card("MRR por plano", plans, "#7c3aed")
 
@@ -402,7 +410,7 @@ def revenue_page(customers: pd.DataFrame) -> None:
     st.markdown('<div class="hero-title">Receita</div>', unsafe_allow_html=True)
     st.markdown('<div class="hero-copy">Composição do MRR e movimentação financeira da carteira fictícia.</div>', unsafe_allow_html=True)
     active = customers[customers["customer_status"] == "Active"].copy()
-    active["mrr_monthly"] = pd.to_numeric(active.get("mrr_monthly", 0), errors="coerce").fillna(0)
+    active["mrr_monthly"] = numeric_column(active, "mrr_monthly")
     history = monthly_history(customers)
     active_mrr = float(active["mrr_monthly"].sum())
     paying = int((active["mrr_monthly"] > 0).sum())
