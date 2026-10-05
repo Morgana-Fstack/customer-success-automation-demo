@@ -109,6 +109,37 @@ def stat_card(label: str, value: str | int, color: str, sub: str = "") -> None:
     )
 
 
+def money(value: float) -> str:
+    formatted = f"{float(value):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"R$ {formatted}"
+
+
+def monthly_history(customers: pd.DataFrame) -> pd.DataFrame:
+    """Build a transparent monthly snapshot from the fictitious portfolio."""
+    data = customers.copy()
+    data["entry"] = pd.to_datetime(data["entry_date"], errors="coerce")
+    data["exit"] = pd.to_datetime(data["cancellation_date"], errors="coerce")
+    data["mrr"] = pd.to_numeric(data.get("mrr_monthly", 0), errors="coerce").fillna(0)
+    valid = data.dropna(subset=["entry"])
+    if valid.empty:
+        return pd.DataFrame()
+    first = valid["entry"].min().to_period("M")
+    current = pd.Timestamp(date.today()).to_period("M")
+    rows = []
+    for period in pd.period_range(first, current, freq="M"):
+        start, end = period.start_time, period.end_time
+        active = valid[(valid["entry"] <= end) & (valid["exit"].isna() | (valid["exit"] > end))]
+        entered = valid[(valid["entry"] >= start) & (valid["entry"] <= end)]
+        exited = valid[(valid["exit"] >= start) & (valid["exit"] <= end)]
+        rows.append({
+            "Mês": period.strftime("%m/%Y"), "Clientes ativos": int(len(active)),
+            "MRR final": float(active["mrr"].sum()), "Entradas": int(len(entered)),
+            "MRR novo": float(entered["mrr"].sum()), "Saídas": int(len(exited)),
+            "MRR perdido": float(exited["mrr"].sum()),
+        })
+    return pd.DataFrame(rows)
+
+
 def distribution_card(title: str, values: pd.Series, color: str) -> None:
     values = values[values > 0]
     rows = []
@@ -178,6 +209,9 @@ def overview(customers: pd.DataFrame) -> None:
     attention = active[active["platform_status"].isin(attention_statuses)].copy()
     due = active["next_contact_date"].apply(normalize_date)
     due_today = int(due.apply(lambda value: value is not None and value <= date.today()).sum())
+    active_mrr = float(pd.to_numeric(active.get("mrr_monthly", 0), errors="coerce").fillna(0).sum())
+    paying = int((pd.to_numeric(active.get("mrr_monthly", 0), errors="coerce").fillna(0) > 0).sum())
+    ticket = active_mrr / paying if paying else 0
 
     st.markdown('<div class="eyebrow">Visão executiva da operação</div>', unsafe_allow_html=True)
     st.markdown('<div class="hero-title">Saúde da carteira em um só lugar</div>', unsafe_allow_html=True)
@@ -190,7 +224,7 @@ def overview(customers: pd.DataFrame) -> None:
     with cards[0]:
         stat_card("Clientes ativos", len(active), "#16a34a", "carteira atual")
     with cards[1]:
-        stat_card("Saídas registradas", len(exits), "#dc2626", "histórico da Demo")
+        stat_card("MRR ativo", money(active_mrr), "#7c3aed", "receita recorrente fictícia")
     with cards[2]:
         stat_card("Precisam de atenção", len(attention), "#f59e0b", "ativos com sinal de risco")
     with cards[3]:
@@ -198,7 +232,18 @@ def overview(customers: pd.DataFrame) -> None:
     with cards[4]:
         stat_card("Contatos vencidos", due_today, "#2563eb", "contato até hoje")
     with cards[5]:
-        stat_card("Total da base", len(customers), "#111827", "ativos e históricos")
+        stat_card("Ticket médio", money(ticket), "#111827", "MRR ÷ clientes pagantes")
+
+    history = monthly_history(customers)
+    chart_left, chart_right = st.columns([1.35, 1])
+    with chart_left:
+        st.markdown("#### MRR que entrou e que saiu")
+        st.caption("Movimento mensal da receita recorrente fictícia.")
+        if not history.empty:
+            st.bar_chart(history.set_index("Mês")[["MRR novo", "MRR perdido"]])
+    with chart_right:
+        plans = active.groupby("plan_cycle")["mrr_monthly"].sum().sort_values(ascending=False)
+        distribution_card("MRR por plano", plans, "#7c3aed")
 
     left, right = st.columns(2)
     health_distribution = health.rename(index=HEALTH_LABELS).reindex(list(HEALTH_LABELS.values()), fill_value=0)
@@ -350,6 +395,93 @@ def analytics(customers: pd.DataFrame) -> None:
             stat_card("Desistências", int((exits["customer_status"] == "Desistencia").sum()), "#f59e0b")
         distribution_card("Motivos das saídas", exits["cancellation_reason"].fillna("Motivo não informado").value_counts(), "#dc2626")
         st.dataframe(exits[["customer_name", "entry_date", "cancellation_date", "cancellation_reason"]], use_container_width=True, hide_index=True)
+
+
+def revenue_page(customers: pd.DataFrame) -> None:
+    st.markdown('<div class="eyebrow">Receita recorrente</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-title">Receita</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-copy">Composição do MRR e movimentação financeira da carteira fictícia.</div>', unsafe_allow_html=True)
+    active = customers[customers["customer_status"] == "Active"].copy()
+    active["mrr_monthly"] = pd.to_numeric(active.get("mrr_monthly", 0), errors="coerce").fillna(0)
+    history = monthly_history(customers)
+    active_mrr = float(active["mrr_monthly"].sum())
+    paying = int((active["mrr_monthly"] > 0).sum())
+    latest = history.iloc[-1] if not history.empty else {}
+    cards = st.columns(4)
+    values = [
+        ("MRR ativo", money(active_mrr), "#7c3aed", "soma mensalizada"),
+        ("Clientes pagantes", paying, "#16a34a", "MRR maior que zero"),
+        ("Ticket médio", money(active_mrr / paying if paying else 0), "#2563eb", "MRR ÷ pagantes"),
+        ("MRR perdido no mês", money(float(latest.get("MRR perdido", 0))), "#dc2626", "saídas do período"),
+    ]
+    for col, args in zip(cards, values):
+        with col: stat_card(*args)
+    left, right = st.columns(2)
+    with left:
+        distribution_card("MRR por plano", active.groupby("plan_cycle")["mrr_monthly"].sum().sort_values(ascending=False), "#7c3aed")
+    with right:
+        distribution_card("MRR por forma de pagamento", active.groupby("payment_platform")["mrr_monthly"].sum().sort_values(ascending=False), "#2563eb")
+    if not history.empty:
+        st.markdown("#### Resultado mensal")
+        result = history.copy()
+        result["Resultado líquido"] = result["MRR novo"] - result["MRR perdido"]
+        st.line_chart(result.set_index("Mês")[["MRR final", "Resultado líquido"]])
+
+
+def retention_page(customers: pd.DataFrame) -> None:
+    st.markdown('<div class="eyebrow">Permanência da carteira</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-title">Retenção</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-copy">Quanto de cada safra ainda permanece ativo.</div>', unsafe_allow_html=True)
+    data = customers.copy()
+    data["entry"] = pd.to_datetime(data["entry_date"], errors="coerce")
+    data = data.dropna(subset=["entry"])
+    data["Safra"] = data["entry"].dt.to_period("M").astype(str)
+    cohort = data.groupby("Safra").agg(
+        Entraram=("customer_id", "count"),
+        Ativos=("customer_status", lambda values: int((values == "Active").sum())),
+        Saídas=("customer_status", lambda values: int((values != "Active").sum())),
+    ).reset_index()
+    cohort["Retenção %"] = (cohort["Ativos"] / cohort["Entraram"] * 100).round(1)
+    st.bar_chart(cohort.set_index("Safra")[["Entraram", "Ativos", "Saídas"]])
+    st.dataframe(cohort, use_container_width=True, hide_index=True)
+    st.info("Safras recentes naturalmente tiveram menos tempo para apresentar cancelamentos.")
+
+
+def history_page(customers: pd.DataFrame) -> None:
+    st.markdown('<div class="eyebrow">Evolução mensal</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-title">Histórico</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-copy">Fechamento mensal reconstruído a partir das entradas e saídas fictícias.</div>', unsafe_allow_html=True)
+    history = monthly_history(customers)
+    if history.empty:
+        st.info("Sem datas suficientes para montar o histórico.")
+        return
+    display = history.copy()
+    for column in ["MRR final", "MRR novo", "MRR perdido"]:
+        display[column] = display[column].map(money)
+    st.dataframe(display, use_container_width=True, hide_index=True)
+    st.caption("O histórico é demonstrativo e recalculado a partir dos dados fictícios desta sessão.")
+
+
+def methodology_page() -> None:
+    st.markdown('<div class="eyebrow">Transparência dos indicadores</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-title">Metodologia</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-copy">De onde sai cada número apresentado na demonstração.</div>', unsafe_allow_html=True)
+    st.markdown("""
+    #### Conceitos principais
+
+    - **Cliente ativo:** registro cujo status atual é Ativo.
+    - **MRR ativo:** soma do valor recorrente mensal dos clientes ativos.
+    - **Ticket médio:** MRR ativo dividido pela quantidade de clientes ativos pagantes.
+    - **MRR novo:** soma do MRR dos clientes cuja entrada ocorreu no mês.
+    - **MRR perdido:** soma do MRR dos clientes cuja saída ocorreu no mês.
+    - **Retenção da safra:** clientes daquela safra ainda ativos divididos pelos clientes que entraram.
+    - **Prioridade operacional:** combinação entre contato pendente, ausência de resposta e proximidade da renovação.
+
+    #### Sobre esta versão
+
+    Todos os nomes, valores, datas e eventos são **fictícios**. A Demo não utiliza dados da Tracionei nem de qualquer cliente real. Alterações feitas na página Clientes valem somente durante a sessão atual.
+    """)
+    st.info("Projeto idealizado e desenvolvido por Morgana Petterle da Cunha, com apoio de IA na implementação técnica.")
 
 
 def customer_card(customer: pd.Series) -> None:
@@ -559,7 +691,7 @@ with st.sidebar:
     st.caption("Versão Lite · demonstração")
     page = st.radio(
         "Navegação",
-        ["▦ Visão geral", "▤ Minha carteira", "▥ Analytics", "♙ Clientes"],
+        ["▦ Visão executiva", "▤ Operação de CS", "◫ Retenção", "◈ Receita", "▥ Analytics", "♙ Clientes", "◷ Histórico", "ⓘ Metodologia"],
         label_visibility="collapsed",
     )
     st.divider()
@@ -568,13 +700,21 @@ with st.sidebar:
         st.rerun()
     st.caption("Dados fictícios. Alterações válidas somente nesta sessão.")
 
-st.markdown('<div class="demo-banner"><strong>Ambiente demonstrativo:</strong> os dados desta versão são fictícios e renovados automaticamente.</div>', unsafe_allow_html=True)
+st.markdown('<div class="demo-banner"><strong>Ambiente demonstrativo:</strong> nomes, valores e eventos são fictícios. Consulte Metodologia para entender cada cálculo.</div>', unsafe_allow_html=True)
 
-if page == "▦ Visão geral":
+if page == "▦ Visão executiva":
     overview(customers)
-elif page == "▤ Minha carteira":
+elif page == "▤ Operação de CS":
     portfolio(customers)
+elif page == "◫ Retenção":
+    retention_page(customers)
+elif page == "◈ Receita":
+    revenue_page(customers)
 elif page == "▥ Analytics":
     analytics(customers)
-else:
+elif page == "♙ Clientes":
     customers_page(customers)
+elif page == "◷ Histórico":
+    history_page(customers)
+else:
+    methodology_page()
