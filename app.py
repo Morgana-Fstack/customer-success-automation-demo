@@ -693,6 +693,16 @@ def customers_page(customers: pd.DataFrame) -> None:
 
 if "demo_customers" not in st.session_state:
     st.session_state.demo_customers = build_demo_customers()
+else:
+    # Keep existing browser sessions compatible when the Demo schema evolves.
+    defaults = build_demo_customers()
+    current = st.session_state.demo_customers.copy()
+    if "customer_id" in current.columns:
+        reference = defaults.set_index("customer_id")
+        for column in defaults.columns:
+            if column not in current.columns:
+                current[column] = current["customer_id"].map(reference[column])
+        st.session_state.demo_customers = current
 customers = st.session_state.demo_customers.copy()
 with st.sidebar:
     st.markdown("### CS Operations Hub")
